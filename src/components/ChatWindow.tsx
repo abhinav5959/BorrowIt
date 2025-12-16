@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/firebase';
-import { collection, addDoc, query, where, orderBy, onSnapshot, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, Timestamp, doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { X, Send } from 'lucide-react';
 
@@ -23,14 +23,37 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ requestId, requestTitle, onClos
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const [recipientId, setRecipientId] = useState<string | null>(null);
 
+    // 1. Fetch Request Details to find Recipient
+    useEffect(() => {
+        const fetchRecipient = async () => {
+            if (!user) return;
+            try {
+                const reqDoc = await getDoc(doc(db, 'requests', requestId));
+                if (reqDoc.exists()) {
+                    const data = reqDoc.data();
+                    // If I am the Owner, write to Helper. If I am Helper, write to Owner.
+                    if (user.uid === data.userId) {
+                        setRecipientId(data.acceptedBy);
+                    } else {
+                        setRecipientId(data.userId);
+                    }
+                }
+            } catch (err) {
+                console.error("Error fetching recipient:", err);
+            }
+        };
+        fetchRecipient();
+    }, [requestId, user]);
+
+    // 2. Listen for Messages (REMOVED orderBy to avoid Index Error)
     useEffect(() => {
         if (!user) return;
 
         const q = query(
             collection(db, 'messages'),
-            where('requestId', '==', requestId),
-            orderBy('createdAt', 'asc')
+            where('requestId', '==', requestId)
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -38,6 +61,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ requestId, requestTitle, onClos
                 id: doc.id,
                 ...doc.data()
             } as Message));
+
+            // Client-side Sort
+            msgs.sort((a, b) => {
+                const t1 = a.createdAt?.seconds || 0;
+                const t2 = b.createdAt?.seconds || 0;
+                return t1 - t2;
+            });
+
             setMessages(msgs);
             scrollToBottom();
         });
@@ -56,6 +87,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ requestId, requestTitle, onClos
         if (!newMessage.trim() || !user) return;
 
         try {
+            // A. Add Message
             await addDoc(collection(db, 'messages'), {
                 requestId,
                 text: newMessage,
@@ -63,9 +95,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ requestId, requestTitle, onClos
                 senderName: user.displayName || 'User',
                 createdAt: Timestamp.now()
             });
+
+            // B. Send Notification to Recipient
+            if (recipientId) {
+                await addDoc(collection(db, 'notifications'), {
+                    userId: recipientId,
+                    title: `New Message: ${requestTitle}`,
+                    message: `${user.displayName || 'Someone'} says: ${newMessage}`,
+                    read: false,
+                    createdAt: Timestamp.now(),
+                    link: '/messages'
+                });
+            }
+
             setNewMessage('');
         } catch (error) {
             console.error("Error sending message:", error);
+            alert("Failed to send. Check console.");
         }
     };
 
