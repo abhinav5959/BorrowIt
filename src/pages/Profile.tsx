@@ -136,6 +136,26 @@ const Profile: React.FC = () => {
                     </div>
                 </div>
 
+                <div style={{ marginBottom: '2rem' }}>
+                    <button
+                        onClick={() => {
+                            Notification.requestPermission().then(perm => {
+                                if (perm === 'granted') {
+                                    new Notification("Notifications Enabled!", { body: "You will now be alerted when requests are posted." });
+                                    setMsg({ type: 'success', text: 'Notifications enabled!' });
+                                } else {
+                                    setMsg({ type: 'error', text: 'Permission denied. Please enable in browser settings.' });
+                                }
+                            });
+                        }}
+                        className="btn w-full"
+                        style={{ background: 'var(--text-main)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                    >
+                        <span role="img" aria-label="bell">🔔</span> Enable Browser Notifications
+                    </button>
+                    <p className="text-muted text-sm mt-2">Get alerts when neighbors post requests.</p>
+                </div>
+
                 <form onSubmit={handleUpdateProfile} style={{ textAlign: 'left' }}>
                     <div className="input-group">
                         <label>Display Name</label>
